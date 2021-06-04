@@ -8,27 +8,36 @@ on:
     branches: [ main ]
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  generate-report:
+    runs-on: ${{ matrix.config.os }}
+    name: ${{ matrix.config.os }} (${{ matrix.config.r }})
     strategy:
+      fail-fast: false
       matrix:
-        r-version: [3.5, 3.6]
+        config:
+          - {os: ubuntu-latest,   r: 'release'}
 
     steps:
       - uses: actions/checkout@v2
-      - name: Set up R ${{ matrix.r-version }}
-        uses: r-lib/actions/setup-r@ffe45a39586f073cc2e9af79c4ba563b657dc6e3
+      
+      - uses: r-lib/actions/setup-r@master
         with:
-          r-version: ${{ matrix.r-version }}
+          r-version: ${{ matrix.config.r }}
+          http-user-agent: ${{ matrix.config.http-user-agent }}
+          
+      - uses: r-lib/actions/setup-pandoc@master
+      
       - name: Install dependencies
         run: |
           install.packages(c("remotes", "rcmdcheck"))
           remotes::install_deps(dependencies = TRUE)
         shell: Rscript {0}
+        
       - name: Generate data and rmd
         run: |
           source("R/job.R")
         shell: Rscript {0}
+        
       - name: Commit files
         run: |
           git config --local user.email "actions@github.com"
