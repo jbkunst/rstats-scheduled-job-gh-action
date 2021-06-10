@@ -20,4 +20,4 @@ hc
 
 saveRDS(hc, here::here("data-raw/hc.rds"))
 
-rmarkdown::render("docs/index.Rmd")
+rmarkdown::render(here::here("docs/index.Rmd"))
