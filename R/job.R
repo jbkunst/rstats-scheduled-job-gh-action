@@ -1,3 +1,5 @@
+message("I'm in job")
+
 library(quantmod)
 library(purrr)
 
