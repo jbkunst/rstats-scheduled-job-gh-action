@@ -6,8 +6,11 @@ library(purrr)
 EFTS <- c("ARKK", "CNRG", "CXSE", "ESGV", "ESPO", "FTEC", "QQQ", "SMH", "VT")
 
 efts_data <- map(EFTS, function(x){
+  
   message(x)
+  
   getSymbols(x, auto.assign = FALSE, from = lubridate::ymd(20180101))
+  
 })
 
 hc <- highcharter::highchart(type = "stock")
