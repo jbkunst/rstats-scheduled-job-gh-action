@@ -15,11 +15,19 @@ library(quantmod)
 library(purrr)
 library(highcharter)
 
-
 xs   <- c("ARKK", "FANG", "TSLA", "^GSPC")
-
 cols <- hc_theme_smpl()$colors
 cols <- cols[seq_along(xs)]
+
+
+hc_opts <- getOption("highcharter.chart")
+
+hc_opts$plotOptions <- list(
+  line = list(marker = list(symbol = "circle")),
+  area = list(marker = list(symbol = "circle"))
+  )
+
+options(highcharter.chart = hc_opts)
 
 # scales::show_col(cols, borders = FALSE)
 
@@ -28,7 +36,7 @@ symbols <- map(xs, function(x){
   message(x)
 
   suppressWarnings(
-    getSymbols(x, auto.assign = FALSE, from = lubridate::ymd(20210101))
+    getSymbols(x, auto.assign = FALSE, from = lubridate::ymd(20200101))
   )
 
 })
@@ -65,36 +73,6 @@ data <- data %>%
 
 tail(data)
 
-chart <- function(var = "monthly", type = "line", ...){
-  
-  # ... <- NULL
-  
-  d <- data %>% 
-    dplyr::select(x = date, y = {{ var }}, group = symbol) %>% 
-    dplyr::filter(complete.cases(.)) %>% 
-    dplyr::mutate(y = round(y, 3))
-  
-  fun_4_x <- switch(
-    var,
-    monthly   = purrr::compose( ~ format(.x, "%Y%m"), as.character, .dir =  "forward"),
-    quarterly = purrr::compose(zoo::as.yearqtr, as.character, .dir =  "forward"),
-    yearly    = purrr::compose(lubridate::year, as.character, .dir =  "forward"),
-    identity
-  )
-  
-  d <- d %>% 
-    dplyr::mutate(x = fun_4_x(x))
-  
-  d
-  
-  highcharter::hchart(d, type = type, highcharter::hcaes(x, y, group = group), ...) %>% 
-    highcharter::hc_tooltip(sort = TRUE, table = TRUE) %>% 
-    highcharter::hc_add_theme(highcharter::hc_theme_smpl()) %>% 
-    highcharter::hc_xAxis(title = "") %>% 
-    highcharter::hc_yAxis(title = "") 
-
-}
-
 chart_symbol <- function(s = "ARKK", ...){
   
   d <- data %>% 
@@ -102,7 +80,6 @@ chart_symbol <- function(s = "ARKK", ...){
     dplyr::select(x = date, y = adjusted) %>% 
     dplyr::filter(complete.cases(.)) %>% 
     dplyr::mutate(y = round(y, 3))
-  
   
   highcharter::hchart(
     d, 
@@ -112,65 +89,151 @@ chart_symbol <- function(s = "ARKK", ...){
     color = cols[which(xs == s)],
     ...
     ) %>% 
-    highcharter::hc_tooltip(sort = TRUE, table = TRUE) %>% 
+    highcharter::hc_tooltip(sort = TRUE, table = TRUE, valuePrefix = "$ ") %>% 
     highcharter::hc_add_theme(highcharter::hc_theme_smpl()) %>% 
     highcharter::hc_xAxis(title = "") %>% 
-    highcharter::hc_yAxis(title = "") 
+    highcharter::hc_yAxis(title = "", labels = list(format = "$ {value}")) %>% 
+    highcharter::hc_rangeSelector(enabled = TRUE, inputEnabled = FALSE, selected = 4) %>% 
+    highcharter::hc_navigator(enabled = TRUE)
     
+}
+
+chart <- function(var = "quarterly", type = "line", ...){
+  
+  # ... <- NULL
+  
+  d <- data %>% 
+    dplyr::select(x = date, y = {{ var }}, group = symbol) %>% 
+    dplyr::filter(complete.cases(.)) %>% 
+    dplyr::mutate(y = round(y, 3))
+  
+  d
+  
+  fun_x <- switch(
+    var,
+    # monthly   = purrr::compose( ~ format(.x, "%Y%m"), as.character, .dir =  "forward"),
+    monthly   = purrr::partial(lubridate::floor_date, unit = "month"),
+    # quarterly = purrr::compose(zoo::as.yearqtr, as.character, .dir =  "forward"),
+    quarterly   = purrr::partial(lubridate::floor_date, unit = "quarter"),
+    # yearly    = purrr::compose(lubridate::year, as.character, .dir =  "forward"),
+    yearly    =  purrr::partial(lubridate::floor_date, unit = "year"),
+    identity
+  )
+  
+  fun_y <- switch(
+    var,
+    adjusted = identity,
+    function(x) x * 100
+  )
+  
+  d
+  
+  d <- d %>% 
+    dplyr::mutate(x = fun_x(x), y = fun_y(y))
+  
+  d
+  
+  h <- highcharter::hchart(
+    d,
+    type = type, 
+    highcharter::hcaes(x, y, group = group), 
+    showInLegend = FALSE,
+    ...
+    ) %>% 
+    highcharter::hc_tooltip(sort = TRUE, table = TRUE, valueDecimals = 2) %>% 
+    highcharter::hc_add_theme(highcharter::hc_theme_smpl()) %>% 
+    highcharter::hc_xAxis(title = "") %>% 
+    highcharter::hc_yAxis(title = "")
+  
+  h
+  
+  if(lubridate::is.Date(d$x)){
+    
+    h <- h %>% 
+      highcharter::hc_rangeSelector(enabled = TRUE, inputEnabled = FALSE)
+     
+  }
+  
+  if(var %in% c("daily", "weekly", "monthly", "quarterly", "yearly")){
+    
+    h <- h %>% 
+      hc_tooltip(valueSuffix = "%") %>% 
+      hc_yAxis(
+        labels = list(format = "{value}%"),
+        plotLines = list(
+          list(
+            # label = list(text = "This is a plotLine"),
+            color = "#F47174",
+            width = 2,
+            value = 0
+            )
+          )
+        )
+    
+  }
+  
+  h
+
 }
 ```
 
 
-Row {.tabset .tabset-fade }
+General
+=====================================  
+
+Row {data-height=600}
 -------------------------------------
-    
+
 ```{r, results='asis'}
 for (x in xs){
-  
-  cat("\n")  
-  
+
+  cat("\n")
+
   cat(stringr::str_c("### ", x))
-  
-  cat("\n")  
-  
-  print(htmltools::tagList(chart_symbol(x)))   
-  
-  cat("\n")  
-  
+
+  cat("\n")
+
+  print(htmltools::tagList(chart_symbol(x)))
+
+  cat("\n")
+
 }
 ```
  
 
-Row {.tabset .tabset-fade }
+Row
 -------------------------------------
-    
-### daily  
-    
-```{r}
-chart("daily")
-```
-    
-### weekly
 
-```{r}
-chart("weekly")
-```
+```{r, results='asis'}
+vars <- c("daily", "weekly", "monthly", "quarterly", "yearly")
 
-### monthly { .active }
+df <- tibble::tibble(var = vars) %>%
+  dplyr::mutate(type = ifelse(var %in% c("daily", "weekly"), "line", "column"))
 
-```{r}
-chart("monthly", type = "column")
-```
+charts <- pmap(df, chart) %>%
+  set_names(vars)
 
-### quarterly
+for (v in vars){
 
-```{r}
-chart("quarterly", type = "column")
-```
+  cat("\n")
 
-### yearly
+  cat(stringr::str_c("### ", stringr::str_to_title(v)))
 
-```{r}
-chart("yearly", type = "column")
+  cat("\n")
+
+  print(htmltools::tagList(charts[[v]]))
+
+  cat("\n")
+
+}
 ```
 
+About
+=====================================  
+
+### hola 
+
+```{r}
+highcharts_demo() %>% 
+  hc_size(0, 0)
+```
