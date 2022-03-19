@@ -1,20 +1,176 @@
 ---
-title: "Job Done"
+title: "Stocks"
 output: 
   flexdashboard::flex_dashboard:
-    orientation: columns
-    vertical_layout: fill
+    orientation: rows
+    theme: 
+      version: 4
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
 library(flexdashboard)
+library(quantmod)
+library(purrr)
+library(highcharter)
+
+
+xs   <- c("ARKK", "FANG", "TSLA", "^GSPC")
+
+cols <- hc_theme_smpl()$colors
+cols <- cols[seq_along(xs)]
+
+# scales::show_col(cols, borders = FALSE)
+
+symbols <- map(xs, function(x){
+
+  message(x)
+
+  suppressWarnings(
+    getSymbols(x, auto.assign = FALSE, from = lubridate::ymd(20210101))
+  )
+
+})
+
+symbols %>% 
+  map(tail)
+
+data_returns <- map(symbols, allReturns) %>% 
+  map(as.data.frame) %>% 
+  map(tibble::rownames_to_column, var = "date") %>% 
+  map(tibble::as_tibble) %>% 
+  map(dplyr::mutate, date = lubridate::ymd(date)) %>% 
+  map2_df(xs, ~ dplyr::mutate(.x, symbol = .y))
+
+data_returns
+
+tail(data_returns)
+
+data <- symbols %>% 
+  map(as.data.frame) %>% 
+  map(tibble::rownames_to_column, var = "date") %>% 
+  map(tibble::as_tibble) %>% 
+  map(dplyr::mutate, date = stringr::str_remove(date, "X")) %>% 
+  map(dplyr::mutate, date = lubridate::ymd(date)) %>% 
+  map(purrr::set_names, c("date", "open", "high", "low", "close", "volume", "adjusted")) %>% 
+  map2_df(xs, ~ dplyr::mutate(.x, symbol = .y))
+
+
+data <- dplyr::inner_join(data, data_returns, by = c("date", "symbol"))
+
+data <- data %>% 
+  dplyr::select(date, symbol, dplyr::everything()) %>% 
+  dplyr::mutate(symbol = factor(symbol, levels = xs))
+
+tail(data)
+
+chart <- function(var = "monthly", type = "line", ...){
+  
+  # ... <- NULL
+  
+  d <- data %>% 
+    dplyr::select(x = date, y = {{ var }}, group = symbol) %>% 
+    dplyr::filter(complete.cases(.)) %>% 
+    dplyr::mutate(y = round(y, 3))
+  
+  fun_4_x <- switch(
+    var,
+    monthly   = purrr::compose( ~ format(.x, "%Y%m"), as.character, .dir =  "forward"),
+    quarterly = purrr::compose(zoo::as.yearqtr, as.character, .dir =  "forward"),
+    yearly    = purrr::compose(lubridate::year, as.character, .dir =  "forward"),
+    identity
+  )
+  
+  d <- d %>% 
+    dplyr::mutate(x = fun_4_x(x))
+  
+  d
+  
+  highcharter::hchart(d, type = type, highcharter::hcaes(x, y, group = group), ...) %>% 
+    highcharter::hc_tooltip(sort = TRUE, table = TRUE) %>% 
+    highcharter::hc_add_theme(highcharter::hc_theme_smpl()) %>% 
+    highcharter::hc_xAxis(title = "") %>% 
+    highcharter::hc_yAxis(title = "") 
+
+}
+
+chart_symbol <- function(s = "ARKK", ...){
+  
+  d <- data %>% 
+    dplyr::filter(symbol == s) %>% 
+    dplyr::select(x = date, y = adjusted) %>% 
+    dplyr::filter(complete.cases(.)) %>% 
+    dplyr::mutate(y = round(y, 3))
+  
+  
+  highcharter::hchart(
+    d, 
+    type = "line",
+    highcharter::hcaes(x, y),
+    name = s,
+    color = cols[which(xs == s)],
+    ...
+    ) %>% 
+    highcharter::hc_tooltip(sort = TRUE, table = TRUE) %>% 
+    highcharter::hc_add_theme(highcharter::hc_theme_smpl()) %>% 
+    highcharter::hc_xAxis(title = "") %>% 
+    highcharter::hc_yAxis(title = "") 
+    
+}
 ```
 
-Column
------------------------------------------------------------------------
 
-### Chart
+Row {.tabset .tabset-fade }
+-------------------------------------
+    
+```{r, results='asis'}
+for (x in xs){
+  
+  cat("\n")  
+  
+  cat(stringr::str_c("### ", x))
+  
+  cat("\n")  
+  
+  print(htmltools::tagList(chart_symbol(x)))   
+  
+  cat("\n")  
+  
+}
+```
+ 
+
+Row {.tabset .tabset-fade }
+-------------------------------------
+    
+### daily  
+    
+```{r}
+chart("daily")
+```
+    
+### weekly
 
 ```{r}
-readRDS(here::here("data-raw/hc.rds"))
+chart("weekly")
 ```
+
+### monthly { .active }
+
+```{r}
+chart("monthly", type = "column")
+```
+
+### quarterly
+
+```{r}
+chart("quarterly", type = "column")
+```
+
+### yearly
+
+```{r}
+chart("yearly", type = "column")
+```
+
